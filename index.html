@@ -2,28 +2,35 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>維修單附件合成器 - 完美複刻版</title>
+  <title>維修單附件合成器</title>
   <style>
-    body { font-family: '微軟正黑體', sans-serif; background-color: #f0f2f5; padding: 40px; display: flex; justify-content: center; }
-    .container { background: white; padding: 35px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); width: 100%; max-width: 550px; }
-    h2 { text-align: center; color: #1a1a1a; margin-bottom: 30px; letter-spacing: 1px; }
+    body { font-family: '微軟正黑體', sans-serif; background-color: #f4f4f9; padding: 20px; display: flex; justify-content: center;}
+    .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 500px; }
+    h2 { text-align: center; color: #333; margin-top: 0;}
     .step { margin-bottom: 25px; }
-    label { display: block; font-weight: 600; margin-bottom: 10px; color: #444; }
-    input[type="file"] { display: block; width: 100%; padding: 12px; border: 2px dashed #cbd5e0; border-radius: 8px; cursor: pointer; background: #fafafa; }
-    button { background: #004a99; color: white; padding: 16px; border: none; width: 100%; cursor: pointer; font-size: 17px; border-radius: 8px; font-weight: bold; transition: all 0.3s; margin-top: 10px; }
-    button:hover { background: #003366; transform: translateY(-1px); }
-    #status { margin-top: 25px; font-weight: 500; text-align: center; min-height: 20px; }
+    label { display: block; font-weight: bold; margin-bottom: 8px; color: #444; }
+    input[type="file"] { display: block; width: 100%; padding: 10px; border: 2px dashed #ccc; border-radius: 6px; box-sizing: border-box; background: #fafafa; cursor: pointer; }
+    button { background: #0056b3; color: white; padding: 14px; border: none; width: 100%; cursor: pointer; font-size: 16px; border-radius: 6px; font-weight: bold; transition: background 0.3s;}
+    button:hover { background: #004494; }
+    #status { margin-top: 20px; font-weight: bold; text-align: center; font-size: 14px;}
   </style>
 
+  <!-- 載入第三方套件 -->
+  <!-- pdf.js 負責「讀取」第一頁的文字 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <!-- pdf-lib 負責「編輯與畫圖」，並產出新 PDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <!-- fontkit 負責讓 PDF 支援「中文字體」 -->
   <script src="https://unpkg.com/@pdf-lib/fontkit/dist/fontkit.umd.min.js"></script>
 </head>
 <body>
 
   <div class="container">
-    <h2>🛠️ 維修紀錄附件合成器</h2>
-    
+    <h2>🛠️ 維修單附件合成器</h2>
+    <p style="color: #666; font-size: 13px; text-align: center; margin-bottom: 20px;">
+      (保留第一頁原版簽名，自動生成第二頁表頭與照片)
+    </p>
+
     <div class="step">
       <label>1. 上傳原版維修紀錄 (PDF)</label>
       <input type="file" id="uploadPdf" accept="application/pdf">
@@ -39,6 +46,7 @@
   </div>
 
   <script>
+   // 設定 PDF.js 的 Worker
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
     document.getElementById('generateBtn').addEventListener('click', async () => {
@@ -47,111 +55,116 @@
         const statusDiv = document.getElementById('status');
 
         if (!pdfFile || !photoFile) {
-            statusDiv.innerText = "⚠️ 請確保 PDF 與照片都已正確上傳！";
-            statusDiv.style.color = "#e53e3e";
+            statusDiv.innerText = "⚠️ 錯誤：請確保 PDF 與照片都已上傳！";
+            statusDiv.style.color = "red";
             return;
         }
 
-        statusDiv.innerText = "⏳ 正在進行像素級排版，請稍候...";
-        statusDiv.style.color = "#3182ce";
+        statusDiv.innerText = "⏳ 正在啟動像素級合成，請稍候...";
+        statusDiv.style.color = "blue";
 
         try {
-            // 讀取第一頁資訊 [cite: 101]
+            // ==========================================
+            // 步驟 A：讀取文字，精準抓號碼
+            // ==========================================
             const pdfArrayBuffer = await pdfFile.arrayBuffer();
             const pdfJsDoc = await pdfjsLib.getDocument({ data: pdfArrayBuffer }).promise;
-            const page1 = await pdfJsDoc.getPage(1);
-            const textContent = await page1.getTextContent();
+            const page = await pdfJsDoc.getPage(1);
+            const textContent = await page.getTextContent();
             const fullText = textContent.items.map(item => item.str).join(' ');
 
-            // 精確正則表達式 
-            const ticketNo = (fullText.match(/報案流水號\s*[:：]?\s*(\d+)/) || ["", ""])[1];
-            const taskNo = (fullText.match(/任務\s*No\.?\s*(\d+)/i) || ["", ""])[1];
+            const ticketMatch = fullText.match(/報案流水號[^\d]*(\d+)/);
+            const taskMatch = fullText.match(/任務\s*No[^\d]*(\d+)/i); 
+            const ticketNo = ticketMatch ? ticketMatch[1] : "";
+            const taskNo = taskMatch ? taskMatch[1] : "";
 
-            // 啟動 pdf-lib
+            // ==========================================
+            // 步驟 B：使用 pdf-lib 開始修改 PDF
+            // ==========================================
             const { PDFDocument, rgb, StandardFonts } = PDFLib;
             const pdfDoc = await PDFDocument.load(pdfArrayBuffer);
-            pdfDoc.registerFontkit(fontkit);
 
-            // 字體加載 (Noto Sans CJK TC) [cite: 146]
+            // 註冊字體
+            pdfDoc.registerFontkit(fontkit);
+            // 英文使用 Helvetica (最接近系統 Arial)
+            const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+            // 中文加載黑體
             const fontUrl = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf';
             const fontBytes = await fetch(fontUrl).then(res => res.arrayBuffer());
             const customFont = await pdfDoc.embedFont(fontBytes);
-            const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-            // 新增第二頁 (A4 尺寸)
             const newPage = pdfDoc.addPage([595.28, 841.89]);
+
+            // ==========================================
+            // 步驟 C：【企業報表系統 像素級排版】
+            // ==========================================
             
-            // --- 像素級排版參數 --- 
-            const marginL = 42.5; 
-            const marginR = 552.8;
-            const tableW = 265;
-            const tableX = marginR - tableW;
-            const tableTopY = 802;
-            const rowH = 18.2; // 精確行高
-            const lineThick = 0.6;
-
-            // 1. 左側標題區域 [cite: 146]
-            newPage.drawText('Diebold Nixdorf', { x: marginL, y: 785, size: 14.5, font: helveticaFont });
-            newPage.drawText('維修紀錄', { x: marginL, y: 758, size: 19.5, font: customFont });
-
-            // 2. 右側表格邊框與格線 
-            newPage.drawRectangle({ 
-                x: tableX, y: tableTopY - (rowH * 3), 
-                width: tableW, height: rowH * 3, 
-                borderColor: rgb(0, 0, 0), borderWidth: lineThick 
-            });
-            for (let i = 1; i <= 2; i++) {
-                newPage.drawLine({
-                    start: { x: tableX, y: tableTopY - (rowH * i) },
-                    end: { x: tableX + tableW, y: tableTopY - (rowH * i) },
-                    thickness: lineThick, color: rgb(0, 0, 0)
-                });
-            }
-            newPage.drawLine({
-                start: { x: tableX + 95, y: tableTopY - (rowH * 3) },
-                end: { x: tableX + 95, y: tableTopY },
-                thickness: lineThick, color: rgb(0, 0, 0)
-            });
-
-            // 3. 填充表格文字 
-            const fontSize = 10.2;
-            const textYOffset = 6.8; // 垂直置中修正
+            const marginL = 42;           // 左邊界 (依據截圖稍微往左推)
+            const marginR = 553;          // 右邊界 (依據截圖稍微往右推)
             
-            const drawCell = (label, value, rowIdx) => {
-                const y = tableTopY - (rowH * rowIdx) - rowH + textYOffset;
-                newPage.drawText(label, { x: tableX + 10, y, size: fontSize, font: customFont });
-                if (value) {
-                    newPage.drawText(value, { x: tableX + 103, y, size: fontSize + 0.3, font: helveticaFont });
-                }
-            };
+            // 1. 左側標題 (精準尺寸與間距)
+            newPage.drawText('Diebold Nixdorf', { x: marginL, y: 782, size: 15, font: helveticaFont, color: rgb(0, 0, 0) });
+            newPage.drawText('維修紀錄', { x: marginL, y: 757, size: 19, font: customFont, color: rgb(0, 0, 0) });
 
-            drawCell('報案流水號', ticketNo, 0);
-            drawCell('任務 No.', taskNo, 1);
-            drawCell('值班 No.', '', 2);
+            // 2. 表格參數 (模仿舊版系統的剛硬感)
+            const tableW = 275;           // 表格總寬度
+            const tableX = marginR - tableW; // X座標貼齊右側
+            const tableTopY = 800;        // 頂部對齊點
+            const rowH = 17.5;            // 列高 (精準 17.5pt)
+            const tableBottomY = tableTopY - (rowH * 3); // 747.5
+            const colSplit = 100;         // 左欄寬度
 
-            // 4. 底部長橫線 
-            newPage.drawLine({ 
-                start: { x: marginL, y: 738 }, 
-                end: { x: marginR, y: 738 }, 
-                thickness: 0.8, color: rgb(0, 0, 0) 
-            });
+            // 畫表格外框與線條 (標準 0.5pt 細黑線，最有系統感)
+            const lineThick = 0.5;
+            newPage.drawRectangle({ x: tableX, y: tableBottomY, width: tableW, height: rowH * 3, borderColor: rgb(0, 0, 0), borderWidth: lineThick });
+            newPage.drawLine({ start: { x: tableX, y: tableTopY - rowH }, end: { x: tableX + tableW, y: tableTopY - rowH }, thickness: lineThick, color: rgb(0, 0, 0) });
+            newPage.drawLine({ start: { x: tableX, y: tableTopY - (rowH * 2) }, end: { x: tableX + tableW, y: tableTopY - (rowH * 2) }, thickness: lineThick, color: rgb(0, 0, 0) });
+            newPage.drawLine({ start: { x: tableX + colSplit, y: tableBottomY }, end: { x: tableX + colSplit, y: tableTopY }, thickness: lineThick, color: rgb(0, 0, 0) });
 
-            // 5. 處理並插入照片
+            // 3. 填入表格文字 (精準垂直置中演算法)
+            const fontSize = 10.5;
+            // Y軸偏移量 = 列高的一半 - 字體大小的一半 (讓文字完美在格子正中間)
+            const textOffsetY = (rowH / 2) - (fontSize / 2.8); 
+            
+            const textY1 = tableTopY - rowH + textOffsetY;
+            const textY2 = tableTopY - (rowH * 2) + textOffsetY;
+            const textY3 = tableBottomY + textOffsetY;
+
+            // 左欄中文
+            newPage.drawText('報案流水號', { x: tableX + 22, y: textY1, size: fontSize, font: customFont });
+            newPage.drawText('任務 No.',   { x: tableX + 29, y: textY2, size: fontSize, font: customFont });
+            newPage.drawText('值班 No.',   { x: tableX + 29, y: textY3, size: fontSize, font: customFont });
+
+            // 右欄數字 (Helvetica, 緊貼左側)
+            const valueX = tableX + colSplit + 5;
+            newPage.drawText(ticketNo, { x: valueX, y: textY1, size: fontSize + 0.5, font: helveticaFont });
+            newPage.drawText(taskNo,   { x: valueX, y: textY2, size: fontSize + 0.5, font: helveticaFont });
+
+            // 4. 底部的黑色長分隔線 (粗度 0.5，精準切齊)
+            newPage.drawLine({ start: { x: marginL, y: 735 }, end: { x: marginR, y: 735 }, thickness: lineThick, color: rgb(0, 0, 0) });
+
+            // ==========================================
+            // 步驟 D：插入機台照片 (自動縮放與置中)
+            // ==========================================
             const photoArrayBuffer = await photoFile.arrayBuffer();
-            let image = photoFile.type === 'image/jpeg' ? await pdfDoc.embedJpg(photoArrayBuffer) : await pdfDoc.embedPng(photoArrayBuffer);
+            let image;
+            if (photoFile.type === 'image/jpeg') {
+                image = await pdfDoc.embedJpg(photoArrayBuffer);
+            } else if (photoFile.type === 'image/png') {
+                image = await pdfDoc.embedPng(photoArrayBuffer);
+            } else {
+                throw new Error("只支援 JPG 或 PNG 格式！");
+            }
 
-            const maxImgW = 510;
-            const maxImgH = 650;
-            const scaled = image.scaleToFit(maxImgW, maxImgH);
-            
-            newPage.drawImage(image, {
-                x: (595.28 - scaled.width) / 2,
-                y: 720 - scaled.height,
-                width: scaled.width,
-                height: scaled.height
-            });
+            const scaledDims = image.scaleToFit(380, 520);
+            const imgX = (595.28 - scaledDims.width) / 2;
+            const imgY = 715 - scaledDims.height; 
 
-            // 存檔與下載
+            newPage.drawImage(image, { x: imgX, y: imgY, width: scaledDims.width, height: scaledDims.height });
+
+            // ==========================================
+            // 步驟 E：打包下載
+            // ==========================================
             const modifiedPdfBytes = await pdfDoc.save();
             const blob = new Blob([modifiedPdfBytes], { type: 'application/pdf' });
             const link = document.createElement('a');
@@ -159,15 +172,14 @@
             link.download = `維修紀錄_${ticketNo}_含附件.pdf`;
             link.click();
 
-            statusDiv.innerText = `✅ 完成！流水號：${ticketNo}`;
-            statusDiv.style.color = "#38a169";
+            statusDiv.innerText = `✅ 成功！已抓取 流水號: ${ticketNo} / 任務號: ${taskNo}`;
+            statusDiv.style.color = "green";
 
         } catch (error) {
             console.error(error);
-            statusDiv.innerText = "❌ 處理失敗：" + error.message;
-            statusDiv.style.color = "#e53e3e";
+            statusDiv.innerText = "❌ 發生錯誤：" + error.message;
+            statusDiv.style.color = "red";
         }
-    });
-  </script>
+    });  </script>
 </body>
 </html>
