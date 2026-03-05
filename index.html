@@ -60,7 +60,7 @@
             return;
         }
 
-        statusDiv.innerText = "⏳ 正在套用原廠工程藍圖，請稍候...";
+        statusDiv.innerText = "⏳ 正在套用原廠黃金比例，請稍候...";
         statusDiv.style.color = "blue";
 
         try {
@@ -93,41 +93,39 @@
             const newPage = pdfDoc.addPage([595.28, 841.89]);
 
             // ==========================================
-            // 步驟 C：【公釐 (mm) 級距精準定位系統】
+            // 步驟 C：【修正版 - 精確公釐座標與黃金比例】
             // ==========================================
             
-            // 1 mm = 2.83465 pt
             const mm2pt = 2.83465;
-            const pageH = 841.89; // A4 總高度
+            const pageH = 841.89;
 
-            // 依據尺規截圖設定 X 軸座標 (由左至右)
-            const marginL = 15 * mm2pt;      // 左側文字與底線起點 (15mm)
-            const tableLeftX = 102 * mm2pt;  // 表格左框線 (102mm)
-            const splitX = 151 * mm2pt;      // 表格中間分隔線 (151mm)
-            const marginR = 195 * mm2pt;     // 表格右框線與底線終點 (195mm)
+            // X 軸座標 (左右比例重新分配)
+            const marginL = 15 * mm2pt;      // 左邊界 15mm
+            const marginR = 195 * mm2pt;     // 右邊界 195mm
+            const tableLeftX = 100 * mm2pt;  // 【修正】表格左起點往左推 (100mm)
+            const splitX = 140 * mm2pt;      // 【修正】分隔線定在 140mm (左欄40mm，右欄55mm，完美左窄右寬)
 
-            // 依據尺規截圖設定 Y 軸座標 (由上而下，需用 pageH 減去)
-            const tableTopY = pageH - (28 * mm2pt);     // 表格最上緣 (距離頂部 28mm)
-            const rowH = 4 * mm2pt;                     // 每一列高度 (精準 4mm，非常扁平)
-            const tableBottomY = tableTopY - (rowH * 3); // 表格最下緣 (距離頂部 40mm)
+            // Y 軸座標 (高度加高、整體上移)
+            const tableTopY = pageH - (23 * mm2pt);     // 【修正】距離頂部 23mm (整體上移)
+            const rowH = 5.5 * mm2pt;                   // 【修正】列高加高到 5.5mm (不再擠在一起)
+            const tableBottomY = tableTopY - (rowH * 3);
             
-            const lineY = pageH - (46.5 * mm2pt);       // 黑色長分隔線 (距離頂部 46.5mm)
+            const lineY = pageH - (44 * mm2pt);         // 黑色長分隔線位置
 
-            // 1. 左側標題 (精準對齊)
-            // Diebold Nixdorf 約在頂部 32.5mm，維修紀錄約在 38.5mm
-            newPage.drawText('Diebold Nixdorf', { x: marginL, y: pageH - (32.5 * mm2pt), size: 14, font: helveticaFont, color: rgb(0, 0, 0) });
-            newPage.drawText('維修紀錄', { x: marginL, y: pageH - (38.5 * mm2pt), size: 16, font: customFont, color: rgb(0, 0, 0) });
+            // 1. 左側標題
+            newPage.drawText('Diebold Nixdorf', { x: marginL, y: tableTopY - (1 * mm2pt), size: 14, font: helveticaFont, color: rgb(0, 0, 0) });
+            newPage.drawText('維修紀錄', { x: marginL, y: tableBottomY + (1.5 * mm2pt), size: 16, font: customFont, color: rgb(0, 0, 0) });
 
-            // 2. 畫表格外框與線條 (1 pt 粗細)
+            // 2. 畫表格外框與線條 (1 pt)
             const lineThick = 1;
             newPage.drawRectangle({ x: tableLeftX, y: tableBottomY, width: marginR - tableLeftX, height: rowH * 3, borderColor: rgb(0, 0, 0), borderWidth: lineThick });
             newPage.drawLine({ start: { x: tableLeftX, y: tableTopY - rowH }, end: { x: marginR, y: tableTopY - rowH }, thickness: lineThick, color: rgb(0, 0, 0) });
             newPage.drawLine({ start: { x: tableLeftX, y: tableTopY - (rowH * 2) }, end: { x: marginR, y: tableTopY - (rowH * 2) }, thickness: lineThick, color: rgb(0, 0, 0) });
             newPage.drawLine({ start: { x: splitX, y: tableBottomY }, end: { x: splitX, y: tableTopY }, thickness: lineThick, color: rgb(0, 0, 0) });
 
-            // 3. 填入表格文字 (精準的 10 pt，並設定完美垂直對齊)
+            // 3. 填入表格文字 (精準 10pt，垂直置中)
             const fontSize = 10;
-            const textOffsetY = 1.2 * mm2pt; // 讓字體底部距離格線約 1.2mm
+            const textOffsetY = (rowH / 2) - (fontSize / 2.8); // 數學計算完美垂直置中
             
             const textY1 = tableTopY - rowH + textOffsetY;
             const textY2 = tableTopY - (rowH * 2) + textOffsetY;
@@ -142,7 +140,7 @@
             const w3 = customFont.widthOfTextAtSize('值班 No.', fontSize);
             newPage.drawText('值班 No.', { x: labelRightEdge - w3, y: textY3, size: fontSize, font: customFont });
 
-            // 右欄數字 (絕對靠左，距離中線 1.5mm，使用 Helvetica)
+            // 右欄數字 (絕對靠左，距離中線 1.5mm)
             const valueLeftEdge = splitX + (1.5 * mm2pt);
             newPage.drawText(ticketNo, { x: valueLeftEdge, y: textY1, size: fontSize, font: helveticaFont });
             newPage.drawText(taskNo,   { x: valueLeftEdge, y: textY2, size: fontSize, font: helveticaFont });
@@ -151,7 +149,7 @@
             newPage.drawLine({ start: { x: marginL, y: lineY }, end: { x: marginR, y: lineY }, thickness: lineThick, color: rgb(0, 0, 0) });
 
             // ==========================================
-            // 步驟 D：插入機台照片 (解除縮小限制，並以橫線為基準定位)
+            // 步驟 D：插入機台照片 (極限最大化)
             // ==========================================
             const photoArrayBuffer = await photoFile.arrayBuffer();
             let image;
@@ -163,13 +161,12 @@
                 throw new Error("只支援 JPG 或 PNG 格式！");
             }
 
-            // 放開限制，允許圖片最大寬度為 170mm (幾乎佔滿左右寬度)
-            const scaledDims = image.scaleToFit(170 * mm2pt, 200 * mm2pt);
+            // 【照片尺寸解鎖】：寬度最大可達 180mm (填滿左右邊距)，高度最大可達 230mm
+            // 這會讓上傳的圖片以「不超出紙張的極限最大尺寸」原汁原味呈現
+            const scaledDims = image.scaleToFit(180 * mm2pt, 230 * mm2pt);
             
-            // 圖片水平置中
             const imgX = (595.28 - scaledDims.width) / 2;
-            // 圖片頂部距離上方黑線約 6mm
-            const imgY = lineY - (6 * mm2pt) - scaledDims.height; 
+            const imgY = lineY - (8 * mm2pt) - scaledDims.height; 
 
             newPage.drawImage(image, { x: imgX, y: imgY, width: scaledDims.width, height: scaledDims.height });
 
@@ -194,5 +191,6 @@
     });</script>
 </body>
 </html>
+
 
 
