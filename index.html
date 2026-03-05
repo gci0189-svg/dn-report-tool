@@ -60,7 +60,7 @@
             return;
         }
 
-        statusDiv.innerText = "⏳ 正在套用原廠黃金比例，請稍候...";
+        statusDiv.innerText = "⏳ 正在啟動像素級合成，請稍候...";
         statusDiv.style.color = "blue";
 
         try {
@@ -84,8 +84,11 @@
             const { PDFDocument, rgb, StandardFonts } = PDFLib;
             const pdfDoc = await PDFDocument.load(pdfArrayBuffer);
 
+            // 註冊字體
             pdfDoc.registerFontkit(fontkit);
+            // 英文與數字使用截圖確認的 Helvetica
             const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+            // 中文使用開源黑體 (替代原廠的 Albany WT J)
             const fontUrl = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf';
             const fontBytes = await fetch(fontUrl).then(res => res.arrayBuffer());
             const customFont = await pdfDoc.embedFont(fontBytes);
@@ -93,46 +96,41 @@
             const newPage = pdfDoc.addPage([595.28, 841.89]);
 
             // ==========================================
-            // 步驟 C：【修正版 - 精確公釐座標與黃金比例】
+            // 步驟 C：【依照截圖屬性 100% 絕對座標復刻】
             // ==========================================
             
-            const mm2pt = 2.83465;
-            const pageH = 841.89;
-
-            // X 軸座標 (左右比例重新分配)
-            const marginL = 15 * mm2pt;      // 左邊界 15mm
-            const marginR = 195 * mm2pt;     // 右邊界 195mm
-            const tableLeftX = 100 * mm2pt;  // 【修正】表格左起點往左推 (100mm)
-            const splitX = 140 * mm2pt;      // 【修正】分隔線定在 140mm (左欄40mm，右欄55mm，完美左窄右寬)
-
-            // Y 軸座標 (高度加高、整體上移)
-            const tableTopY = pageH - (23 * mm2pt);     // 【修正】距離頂部 23mm (整體上移)
-            const rowH = 5.5 * mm2pt;                   // 【修正】列高加高到 5.5mm (不再擠在一起)
-            const tableBottomY = tableTopY - (rowH * 3);
+            const marginL = 42.5;         // 左邊界 (15mm)
+            const marginR = 552.7;        // 右邊界 (195mm)
             
-            const lineY = pageH - (44 * mm2pt);         // 黑色長分隔線位置
+            // 1. 左側標題 (精準套用截圖解析出的 pt 大小)
+            newPage.drawText('Diebold Nixdorf', { x: marginL, y: 756, size: 14, font: helveticaFont, color: rgb(0, 0, 0) });
+            newPage.drawText('維修紀錄', { x: marginL, y: 734.5, size: 16, font: customFont, color: rgb(0, 0, 0) });
 
-            // 1. 左側標題
-            newPage.drawText('Diebold Nixdorf', { x: marginL, y: tableTopY - (1 * mm2pt), size: 14, font: helveticaFont, color: rgb(0, 0, 0) });
-            newPage.drawText('維修紀錄', { x: marginL, y: tableBottomY + (1.5 * mm2pt), size: 16, font: customFont, color: rgb(0, 0, 0) });
+            // 2. 表格參數 (精確座標)
+            const tableTopY = 768.5;      // 表格頂部
+            const rowH = 13.5;            // 列高 (極扁平)
+            const tableBottomY = tableTopY - (rowH * 3); // 728
+            const tableW = 290;           // 表格總寬
+            const tableX = marginR - tableW; // 表格左起點 (262.7)
+            const colSplit = 132;         // 中間分隔線位置
 
-            // 2. 畫表格外框與線條 (1 pt)
+            // 畫表格外框與線條 (截圖確認絕對值：1 pt)
             const lineThick = 1;
-            newPage.drawRectangle({ x: tableLeftX, y: tableBottomY, width: marginR - tableLeftX, height: rowH * 3, borderColor: rgb(0, 0, 0), borderWidth: lineThick });
-            newPage.drawLine({ start: { x: tableLeftX, y: tableTopY - rowH }, end: { x: marginR, y: tableTopY - rowH }, thickness: lineThick, color: rgb(0, 0, 0) });
-            newPage.drawLine({ start: { x: tableLeftX, y: tableTopY - (rowH * 2) }, end: { x: marginR, y: tableTopY - (rowH * 2) }, thickness: lineThick, color: rgb(0, 0, 0) });
-            newPage.drawLine({ start: { x: splitX, y: tableBottomY }, end: { x: splitX, y: tableTopY }, thickness: lineThick, color: rgb(0, 0, 0) });
+            newPage.drawRectangle({ x: tableX, y: tableBottomY, width: tableW, height: rowH * 3, borderColor: rgb(0, 0, 0), borderWidth: lineThick });
+            newPage.drawLine({ start: { x: tableX, y: tableTopY - rowH }, end: { x: tableX + tableW, y: tableTopY - rowH }, thickness: lineThick, color: rgb(0, 0, 0) });
+            newPage.drawLine({ start: { x: tableX, y: tableTopY - (rowH * 2) }, end: { x: tableX + tableW, y: tableTopY - (rowH * 2) }, thickness: lineThick, color: rgb(0, 0, 0) });
+            newPage.drawLine({ start: { x: tableX + colSplit, y: tableBottomY }, end: { x: tableX + colSplit, y: tableTopY }, thickness: lineThick, color: rgb(0, 0, 0) });
 
-            // 3. 填入表格文字 (精準 10pt，垂直置中)
+            // 3. 填入表格文字 (精準的 10 pt，並設定完美垂直對齊)
             const fontSize = 10;
-            const textOffsetY = (rowH / 2) - (fontSize / 2.8); // 數學計算完美垂直置中
+            const textOffsetY = (rowH / 2) - (fontSize / 2.6); // 垂直置中基準
             
             const textY1 = tableTopY - rowH + textOffsetY;
             const textY2 = tableTopY - (rowH * 2) + textOffsetY;
             const textY3 = tableBottomY + textOffsetY;
 
-            // 左欄中文 (絕對靠右，距離中線 1.5mm)
-            const labelRightEdge = splitX - (1.5 * mm2pt);
+            // 左欄中文 (絕對靠右，距離中線 3pt)
+            const labelRightEdge = tableX + colSplit - 3;
             const w1 = customFont.widthOfTextAtSize('報案流水號', fontSize);
             newPage.drawText('報案流水號', { x: labelRightEdge - w1, y: textY1, size: fontSize, font: customFont });
             const w2 = customFont.widthOfTextAtSize('任務 No.', fontSize);
@@ -140,16 +138,17 @@
             const w3 = customFont.widthOfTextAtSize('值班 No.', fontSize);
             newPage.drawText('值班 No.', { x: labelRightEdge - w3, y: textY3, size: fontSize, font: customFont });
 
-            // 右欄數字 (絕對靠左，距離中線 1.5mm)
-            const valueLeftEdge = splitX + (1.5 * mm2pt);
+            // 右欄數字 (絕對靠左，距離中線 4pt，使用 Helvetica)
+            const valueLeftEdge = tableX + colSplit + 4;
             newPage.drawText(ticketNo, { x: valueLeftEdge, y: textY1, size: fontSize, font: helveticaFont });
             newPage.drawText(taskNo,   { x: valueLeftEdge, y: textY2, size: fontSize, font: helveticaFont });
 
-            // 4. 底部的黑色長分隔線
+            // 4. 底部的黑色長分隔線 (截圖確認：1 pt，貫穿左右邊界)
+            const lineY = 720;
             newPage.drawLine({ start: { x: marginL, y: lineY }, end: { x: marginR, y: lineY }, thickness: lineThick, color: rgb(0, 0, 0) });
 
             // ==========================================
-            // 步驟 D：插入機台照片 (極限最大化)
+            // 步驟 D：插入機台照片 (解除縮小限制，原尺寸重現)
             // ==========================================
             const photoArrayBuffer = await photoFile.arrayBuffer();
             let image;
@@ -161,12 +160,13 @@
                 throw new Error("只支援 JPG 或 PNG 格式！");
             }
 
-            // 【照片尺寸解鎖】：寬度最大可達 180mm (填滿左右邊距)，高度最大可達 230mm
-            // 這會讓上傳的圖片以「不超出紙張的極限最大尺寸」原汁原味呈現
-            const scaledDims = image.scaleToFit(180 * mm2pt, 230 * mm2pt);
+            // 【修正】取消強制小圖。設定安全範圍為 480x600 (幾乎填滿下方A4空間)
+            // 只要照片不超過這個範圍，就會以「原本的尺寸比例」顯示出來！
+            const scaledDims = image.scaleToFit(480, 600);
             
+            // 圖片水平置中，並放在長分隔線下方 15pt 的位置
             const imgX = (595.28 - scaledDims.width) / 2;
-            const imgY = lineY - (8 * mm2pt) - scaledDims.height; 
+            const imgY = lineY - 15 - scaledDims.height; 
 
             newPage.drawImage(image, { x: imgX, y: imgY, width: scaledDims.width, height: scaledDims.height });
 
@@ -191,6 +191,7 @@
     });</script>
 </body>
 </html>
+
 
 
 
